@@ -457,7 +457,7 @@ class TestNode(unittest.TestCase):
     node_def = helper.make_node("Sqrt", ["X"], ["Y"])
     x = self._get_rnd([1000]) + 1.0
     output = run_node(node_def, [x])
-    np.testing.assert_almost_equal(output["Y"], np.sqrt(x))
+    np.testing.assert_almost_equal(output["Y"], np.sqrt(x), decimal=5)
 
   def test_squeeze(self):
     node_def = helper.make_node("Squeeze", ["X"], ["Y"], axes=[2])
