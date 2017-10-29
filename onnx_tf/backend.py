@@ -57,7 +57,7 @@ def convertAttributeProto(onnx_arg):
   elif onnx_arg.ints:
     return list(onnx_arg.ints)
   elif onnx_arg.strings:
-    return list(onnx_arg.strings)
+    return str(list(onnx_arg.strings), 'utf-8')
   else:
     raise ValueError("Unsupported ONNX attribute: {}".format(onnx_arg))
 
@@ -612,16 +612,16 @@ class TensorflowBackend(Backend):
       warnings.warn("We currently do not support skipping input transformation.")
 
     hidden_size = node.attrs["hidden_size"]
-    if str(node.attrs["cell_type"]) == "relu":
+    if node.attrs["cell_type"] == "relu":
       relu_layer = tf.contrib.rnn.BasicCell(hidden_size, activation=tf.nn.relu)
       cell = tf.contrib.rnn.MultiRNNCell([relu_layer] * num_layers)
-    elif str(node.attrs["cell_type"]) == "tanh":
+    elif node.attrs["cell_type"] == "tanh":
       tanh_layer = tf.contrib.rnn.BasicCell(hidden_size)
       cell = tf.contrib.rnn.MultiRNNCell([tanh_layer] * num_layers)
-    elif str(node.attrs["cell_type"]) == "gru":
+    elif node.attrs["cell_type"] == "gru":
       gru_layer = tf.contrib.rnn.GRUCell(hidden_size)
       cell = tf.contrib.rnn.MultiRNNCell([gru_layer] * num_layers)
-    elif str(node.attrs["cell_type"]) == "lstm":
+    elif node.attrs["cell_type"] == "lstm":
       lstm_layer = tf.contrib.rnn.LSTMCell(hidden_size)
       cell = tf.contrib.rnn.MultiRNNCell([lstm_layer] * num_layers)
     else:
