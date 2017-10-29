@@ -1,6 +1,14 @@
 os:
   - linux
-#  - osx
+  - osx
+  - |
+  set -e
+  if [ "$TRAVIS_OS_NAME" == "osx" ]; then
+    rvm get stable
+    which python || travis_retry brew install python && brew link --overwrite python
+    which python
+    python --version
+  fi
 dist: trusty
 sudo: required
 language: python
