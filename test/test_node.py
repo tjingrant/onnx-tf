@@ -7,6 +7,7 @@ import unittest
 import numpy as np
 import tensorflow as tf
 from onnx_tf.backend import run_node
+from onnx_tf.backend import supports_device
 from onnx import helper
 from onnx.onnx_pb2 import TensorProto
 
@@ -170,13 +171,17 @@ class TestNode(unittest.TestCase):
     np.testing.assert_almost_equal(output["Y"].flatten(), values)
 
   def test_conv(self):
+    device = "CUDA"
+    if not supports_device(device):
+                raise unittest.SkipTest(
+                    "Backend doesn't support device {}".format(device))
     node_def = helper.make_node("Conv", ["X", "weights"],
                                 ["Y"])
     x_shape = [1, 5, 4]
     x = self._get_rnd(x_shape)
     weight_shape = [5, 3, 2]
     weights = self._get_rnd(weight_shape)
-    output = run_node(node_def, [x, weights], device="CUDA")
+    output = run_node(node_def, [x, weights], device=device)
     out_shape = [x_shape[0], weight_shape[1], x_shape[2]]
     test_output = np.zeros(out_shape)
     for b in range(0, x_shape[0]):
@@ -190,13 +195,17 @@ class TestNode(unittest.TestCase):
     np.testing.assert_almost_equal(output["Y"], test_output)
 
   def test_conv_transpose(self):
+    device = "CUDA"
+    if not supports_device(device):
+                raise unittest.SkipTest(
+                    "Backend doesn't support device {}".format(device))
     node_def = helper.make_node("ConvTranspose", ["X", "weights"],
                                 ["Y"])
     x_shape = [1, 5, 4]
     x = self._get_rnd(x_shape)
     weight_shape = [3, 5, 2]
     weights = self._get_rnd(weight_shape)
-    output = run_node(node_def, [x, weights], device="CUDA")
+    output = run_node(node_def, [x, weights], device=device)
     out_shape = [x_shape[0], weight_shape[0], x_shape[2]]
     test_output = np.zeros(out_shape)
     for b in range(0, x_shape[0]):
