@@ -420,16 +420,22 @@ class TensorflowBackend(Backend):
 
   @classmethod
   def handle_batch_normalization(cls, node, input_dict):
+    def _explicit_broadcast(tensor):
+      tensor = tf.expand_dims(tensor, 0)
+      tensor = tf.expand_dims(tensor, 2)
+      tensor = tf.expand_dims(tensor, 3)
+      return tensor
+
     x = input_dict[node.inputs[0]]
-    scale = input_dict[node.inputs[1]]
-    bias = input_dict[node.inputs[2]]
-    mean = input_dict[node.inputs[3]]
-    variance = input_dict[node.inputs[4]]
-    variance_epsilon = node.attrs["epsilon"]
-    if "is_test" in node.attrs.keys():
-      warnings.warn("Unsupported is_test attribute by Tensorflow in "
-                    "batch_normalization. This attribute will be ignored.",
-                    UserWarning)
+    scale = _explicit_broadcast(input_dict[node.inputs[1]])
+    bias = _explicit_broadcast(input_dict[node.inputs[2]])
+    mean = _explicit_broadcast(input_dict[node.inputs[3]])
+    variance = _explicit_broadcast(input_dict[node.inputs[4]])
+
+    variance_epsilon = node.attrs.get("epsilon", 0.00001)
+    if node.attrs.get("is_test", 0):
+      return [tf.nn.batch_normalization(x, mean, variance, bias, scale,
+                                      variance_epsilon)]
     if "momentum" in node.attrs.keys():
       warnings.warn("Unsupported momentum attribute by Tensorflow in "
                     "batch_normalization. This attribute will be ignored.",
@@ -438,6 +444,7 @@ class TensorflowBackend(Backend):
       warnings.warn("Unsupported spatial attribute by Tensorflow in "
                     "batch_normalization. This attribute will be ignored.",
                     UserWarning)
+    # TODO: need to conform to the documentation here
     return [tf.nn.batch_normalization(x, mean, variance, bias, scale,
                                       variance_epsilon)]
 
@@ -547,6 +554,7 @@ class TensorflowBackend(Backend):
   @classmethod
   def handle_gemm(cls, node, input_dict):
     x = input_dict[node.inputs[0]]
+    x = tf.contrib.layers.flatten(x)
     y = input_dict[node.inputs[1]]
     z = input_dict[node.inputs[2]]
     if "transA" in node.attrs.keys() and node.attrs["transA"] == 1:
@@ -580,6 +588,9 @@ class TensorflowBackend(Backend):
     size = node.attrs["size"]
     tf_alpha = alpha * 1.0 / size
     depth_radius = np.floor([(size - 1) / 2.0])[0]
+    # TODO: LRN in tf accepts radius
+    # but in ONNX/Caffe accepts diameter.
+    # This could be a problem.
     return [tf.nn.lrn(x, depth_radius=depth_radius,
       bias=bias, alpha=tf_alpha, beta=beta)]
 

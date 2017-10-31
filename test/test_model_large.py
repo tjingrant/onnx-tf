@@ -15,16 +15,41 @@ class TestNode(unittest.TestCase):
   MODEL_PATH = "../../onnx_models/"
 
   def test_squeezenet(self):
+    model = onnx.load(self.MODEL_PATH + "squeezenet/model.pb")
+    tf_rep = prepare(model)
     for i in range(3):
-      model = onnx.load(self.MODEL_PATH + "squeezenet/model.pb")
       sample = np.load(self.MODEL_PATH + "squeezenet/test_data_{}.npz".format(str(i)), encoding='bytes')
 
       inputs = list(sample['inputs'])
       outputs = list(sample['outputs'])
 
-      tf_rep = prepare(model)
       my_out = tf_rep.run(inputs)
-      np.testing.assert_almost_equal(outputs[0], my_out['softmaxout_1'], decimal=5)
+      np.testing.assert_almost_equal(outputs[0], my_out['softmaxout_1'], decimal=4)
+
+  def test_vgg16(self):
+    model = onnx.load(self.MODEL_PATH + "vgg16/model.pb")
+    tf_rep = prepare(model)
+    for i in range(3):
+      sample = np.load(self.MODEL_PATH + "vgg16/test_data_{}.npz".format(str(i)), encoding='bytes')
+
+      inputs = list(sample['inputs'])
+      outputs = list(sample['outputs'])
+
+      my_out = tf_rep.run(inputs)
+      np.testing.assert_almost_equal(outputs[0], my_out['gpu_0/softmax_1'], decimal=4)
+
+  def test_vgg19(self):
+    model = onnx.load(self.MODEL_PATH + "vgg19/model.pb")
+    tf_rep = prepare(model)
+
+    for i in range(3):
+      sample = np.load(self.MODEL_PATH + "vgg19/test_data_{}.npz".format(str(i)), encoding='bytes')
+
+      inputs = list(sample['inputs'])
+      outputs = list(sample['outputs'])
+
+      my_out = tf_rep.run(inputs)
+      np.testing.assert_almost_equal(outputs[0], my_out['prob_1'], decimal=4)
 
 if __name__ == '__main__':
   unittest.main()
