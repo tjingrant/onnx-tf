@@ -194,7 +194,7 @@ class TestNode(unittest.TestCase):
             for k in range(h, min(h+weight_shape[2], x_shape[2])):
               v += x[b][c][k] * weights[c][m][k-h]
           test_output[b][m][h] = v
-    np.testing.assert_almost_equal(output["Y"], test_output)
+    np.testing.assert_almost_equal(output["Y"], test_output, decimal=5)
 
   def test_conv_transpose(self):
     device = "CUDA"
@@ -397,8 +397,8 @@ class TestNode(unittest.TestCase):
 
   def test_max_pool(self):
     node_def = helper.make_node("MaxPool", ["X"], ["Y"],
-      dilations=[1,1,1,1], kernel_shape=[1,1,1,2],
-      pads=[0,0,0,0], strides=[1,1,1,2])
+      dilations=[1,1], kernel_shape=[1,2],
+      pads=[0,0], strides=[1,2])
     x = self._get_rnd([10, 10, 4, 4])
     output = run_node(node_def, [x])
     test_output = np.zeros([10, 10, 4, 2])
