@@ -206,8 +206,13 @@ class TensorflowBackend(Backend):
   }
 
   @classmethod
-  def pad2tfpad(cls, pads):
-    return "VALID" if pads[0] == 0 else "SAME"
+  def guess_tf_pad(cls, pads):
+    tf_pad = "VALID" if pads[0] == 0 else "SAME"
+    warnings.warn("Unsupported pads attribute by Tensorflow in "
+                    "pool operator. Your padding is {}, we guess "
+                    "you want {} padding.".format(str(pads), tf_pad),
+                    UserWarning)
+    return tf_pad
 
   @classmethod
   def run_node(cls, node, inputs, device='CPU'):
@@ -405,11 +410,7 @@ class TensorflowBackend(Backend):
     if x_rank > 5:
       warnings.warn("Unsupported tensor rank in pool operator.",
                     UserWarning)
-    if "pads" in node.attrs.keys():
-      warnings.warn("Unsupported pads attribute by Tensorflow in "
-                    "pool operator. The SAME padding algorithm will be used.",
-                    UserWarning)
-    tf_pads = cls.pad2tfpad(node.attrs["pads"])
+    tf_pads = cls.guess_tf_pad(node.attrs["pads"])
     return [tf.nn.pool(x, kernel_shape, pooling_type, tf_pads, strides=strides,
                        data_format=data_format)]
 
@@ -444,7 +445,7 @@ class TensorflowBackend(Backend):
   def handle_concat(cls, node, input_dict):
     values = [input_dict[a] for a in node.inputs]
     # apparently this is what's needed for squeezenet to work
-    axis = node.attrs["axis"] if "axis" in node.attrs.keys() else 1
+    axis = node.attrs.get("axis", 1)
     return [tf.concat(values, axis=axis)]
 
   @classmethod
@@ -479,19 +480,19 @@ class TensorflowBackend(Backend):
       warnings.warn("Unsupported group attribute by Tensorflow in "
                     "Conv. This attribute will be ignored.",
                     UserWarning)
-    if "pads" in node.attrs.keys():
-      warnings.warn("Unsupported pads attribute by Tensorflow in "
-                    "Conv operator. The SAME padding algorithm will be used.",
-                    UserWarning)
     if "kernel_shape" in node.attrs.keys():
       warnings.warn("Unsupported kernel_shape attribute by Tensorflow in "
                     "Conv operator. The attribute will be ignored.",
                     UserWarning)
-    tf_pads = cls.pad2tfpad(node.attrs["pads"])
-    output = tf.nn.bias_add(tf.nn.convolution(x, weights, tf_pads, strides=strides,
+    tf_pads = cls.guess_tf_pad(node.attrs["pads"])
+    convolved = tf.nn.convolution(x, weights, tf_pads, strides=strides,
                               dilation_rate=dilations,
-                              data_format=data_format), input_dict[node.inputs[2]], data_format="NCHW")
-    return [output]
+                              data_format=data_format)
+    if len(node.inputs) == 2:
+      return [convolved]
+    else:
+      bias = input_dict[node.inputs[2]]
+      return [tf.nn.bias_add(convolved, bias, data_format="NCHW")]
 
   @classmethod
   def handle_conv(cls, node, input_dict):
@@ -616,7 +617,7 @@ class TensorflowBackend(Backend):
         warnings.warn("No dilations supported by Tensorflow.", UserWarning)
     kernel_shape = [1, 1] + node.attrs["kernel_shape"]
     # TODO: map ONNX padding to TF padding. For now default to "SAME".
-    tf_pads = cls.pad2tfpad(node.attrs["pads"])
+    tf_pads = cls.guess_tf_pad(node.attrs["pads"])
 
     strides = [1, 1] + node.attrs["strides"]
     # Also takes data_format='NCHW'
