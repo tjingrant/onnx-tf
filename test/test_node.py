@@ -128,7 +128,7 @@ class TestNode(unittest.TestCase):
     _bias = bias.reshape(_param_shape)
     golden = self._batch_normalization(x, _m, _v, _bias, _scale, 0.001)
     output = run_node(node_def, [x, scale, bias, m, v])
-    np.testing.assert_almost_equal(output["Y"], golden)
+    np.testing.assert_almost_equal(output["Y"], golden, decimal=5)
 
   def test_cast(self):
     for ty, tf_type in [("float", tf.float32),
