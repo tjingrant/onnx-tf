@@ -115,13 +115,18 @@ class TestNode(unittest.TestCase):
                                 consumed_inputs=[0, 0, 0, 1, 1],
                                 epsilon=0.001)
     x_shape = [3, 5, 4, 2]
-    param_shape = [2]
+    param_shape = [5]
+    _param_shape = [1, 5, 1, 1]
     x = self._get_rnd(x_shape, 0, 1)
     m = self._get_rnd(param_shape, 0, 1)
+    _m = m.reshape(_param_shape)
     v = self._get_rnd(param_shape, 0, 1)
+    _v = v.reshape(_param_shape)
     scale = self._get_rnd(param_shape, 0, 1)
+    _scale = scale.reshape(_param_shape)
     bias = self._get_rnd(param_shape, 0, 1)
-    golden = self._batch_normalization(x, m, v, bias, scale, 0.001)
+    _bias = bias.reshape(_param_shape)
+    golden = self._batch_normalization(x, _m, _v, _bias, _scale, 0.001)
     output = run_node(node_def, [x, scale, bias, m, v])
     np.testing.assert_almost_equal(output["Y"], golden)
 
