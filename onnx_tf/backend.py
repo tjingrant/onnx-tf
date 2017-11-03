@@ -435,16 +435,8 @@ class TensorflowBackend(Backend):
     strides = node.attrs["strides"]
 
     pads = node.attrs.get("pads", [0,0,0,0])
-    # print("kernel shape", kernel_shape)
 
     def py_pool(x, kernel_shape, strides, pad):
-      # print("="*20)
-      # print(x.shape)
-      # print(kernel_shape)
-      # print(strides)
-      # print(pad)
-      # print(x_shape[2] + pads[0] + pads[2] - kernel_shape[0], kernel_shape[0], strides[0])
-      # print(int(x_shape[2] + pads[0] + pads[2] - kernel_shape[0])// strides[0])
       out_h = int((x.shape[2] + pads[0] + pads[2] - kernel_shape[0]) // strides[0]) + 1
       out_w = int((x.shape[3] + pads[1] + pads[3] - kernel_shape[1]) // strides[1]) + 1
 
@@ -476,6 +468,7 @@ class TensorflowBackend(Backend):
     out_h = int((x_shape[2] + pads[0] + pads[2] - kernel_shape[0]) // strides[0]) + 1
     out_w = int((x_shape[3] + pads[1] + pads[3] - kernel_shape[1]) // strides[1]) + 1
     pooled.set_shape([x_shape[0], x_shape[1], out_h, out_w])
+
     return [pooled]
 
   @classmethod
@@ -509,7 +502,7 @@ class TensorflowBackend(Backend):
                          data_format=data_format)
       pooled = tf.transpose(pooled, perm=[0, 3, 1, 2])
 
-      return [pooled]
+    return [pooled]
 
   @classmethod
   def handle_average_pool(cls, node, input_dict):
