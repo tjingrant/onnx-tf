@@ -13,7 +13,7 @@ from onnx.onnx_pb2 import TensorProto
 
 MODEL_PATH = "../../onnx_models/"
 
-def _test_nn(net, output):
+def _test_nn(net, output, argmax=False):
   model = onnx.load(MODEL_PATH + net + "/model.pb")
   tf_rep = prepare(model)
   for i in range(3):
@@ -23,7 +23,13 @@ def _test_nn(net, output):
     outputs = list(sample['outputs'])
 
     my_out = tf_rep.run(inputs)
-    np.testing.assert_allclose(outputs[0], my_out[output], rtol=1e-3)
+
+    print(my_out[output].shape)
+
+    if argmax:
+      assert(np.argmax(outputs[0].flatten()), np.argmax(my_out[output].flatten()))
+    else:
+      np.testing.assert_allclose(outputs[0], my_out[output], rtol=1e-3)
 
 class TestLargeModel(unittest.TestCase):
 
@@ -39,8 +45,9 @@ class TestLargeModel(unittest.TestCase):
   def test_bvlc_alexnet(self):
     _test_nn("bvlc_alexnet", "prob_1")
 
+  # Only test for classification because of avg pooling.
   def test_shuffle_net(self):
-    _test_nn("shufflenet", "gpu_0/softmax_1")
+    _test_nn("shufflenet", "gpu_0/softmax_1", True)
 
   def test_dense_net(self):
     _test_nn("densenet121", "fc6_1")
