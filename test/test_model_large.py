@@ -40,7 +40,6 @@ class TestLargeModel(unittest.TestCase):
     _test_nn("bvlc_alexnet", "prob_1")
 
   def test_shuffle_net(self):
-    return
     _test_nn("shufflenet", "gpu_0/softmax_1")
 
   def test_dense_net(self):
@@ -50,11 +49,9 @@ class TestLargeModel(unittest.TestCase):
     _test_nn("resnet50", "gpu_0/softmax_1")
 
   def test_inception_v1(self):
-    return
     _test_nn("inception_v1", "prob_1")
 
   def test_inception_v2(self):
-    return
     _test_nn("inception_v2", "prob_1")
 
 if __name__ == '__main__':
