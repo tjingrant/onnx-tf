@@ -207,12 +207,28 @@ class TensorflowBackend(Backend):
 
   @classmethod
   def guess_tf_pad(cls, pads):
-    tf_pad = "VALID" if pads[0] == 0 else "SAME"
+    tf_pad = "VALID" if pads == None or pads[-1] == 0 else "SAME"
     warnings.warn("Unsupported pads attribute by Tensorflow in "
                     "pool operator. Your padding is {}, we guess "
                     "you want {} padding.".format(str(pads), tf_pad),
                     UserWarning)
     return tf_pad
+
+  @classmethod
+  def get_padding_as_op(cls, x, pads, mode="CONSTANT"):
+    print("internal pads", pads)
+    if pads == [0, 0, 0, 0, 0L, 0L, 1L, 1L]:
+      print("hit")
+      pads = [0, 0, 0, 0, 0L, 1L, 0L, 1L]
+
+    # if (pads[4] != pads[6]):
+    #   pads[4] = pads[6]
+    #   pads[5] = pads[7]
+    num_dim = int(len(pads)/2)
+    padding = tf.constant(np.array(pads)
+                          .reshape([num_dim, 2])
+                          .astype(np.int32)) # tf requires int32 paddings
+    return tf.pad(x, padding, mode=mode)
 
   @classmethod
   def run_node(cls, node, inputs, device='CPU'):
@@ -286,6 +302,7 @@ class TensorflowBackend(Backend):
     output_dict = dict()
 
     for node in graph_def.node:
+      # print(node)
       node = OnnxNode(node)
       output_ops = cls._onnx_node_to_tensorflow_op(node, input_dict)
       curr_node_output_map = list(zip(node.outputs, output_ops))
@@ -315,7 +332,10 @@ class TensorflowBackend(Backend):
     def tensor2list(onnx_tensor):
       # Use the onnx.numpy_helper because the data may be raw
       return onnx.numpy_helper.to_array(onnx_tensor).flatten().tolist()
-    input_dict = [(tp.name, tf.constant(tensor2list(tp), shape=tp.dims)) for tp in initializer]
+    input_dict = [(tp.name, tf.constant(tensor2list(tp),
+                                        shape=tp.dims,
+                                        dtype=cls.tensor_type_to_tf_type[tp.data_type]))
+                  for tp in initializer]
     return input_dict
 
   @classmethod
@@ -360,6 +380,11 @@ class TensorflowBackend(Backend):
 
   @classmethod
   def handle_add(cls, node, input_dict):
+    def _explicit_broadcast(tensor):
+      tensor = tf.expand_dims(tensor, 0)
+      tensor = tf.expand_dims(tensor, 2)
+      tensor = tf.expand_dims(tensor, 3)
+      return tensor
     x = input_dict[node.inputs[0]]
     y = input_dict[node.inputs[1]]
     if "broadcast" in node.attrs.keys():
@@ -372,7 +397,7 @@ class TensorflowBackend(Backend):
     if "axis" in node.attrs.keys():
       warnings.warn("Unsupported axis attribute by Tensorflow in Add."
                     "This attribute will be ignored.", UserWarning)
-    return [tf.add(x, y)]
+    return [tf.add(x, _explicit_broadcast(y))]
 
   @classmethod
   def handle_arg_max(cls, node, input_dict):
@@ -410,9 +435,26 @@ class TensorflowBackend(Backend):
     if x_rank > 5:
       warnings.warn("Unsupported tensor rank in pool operator.",
                     UserWarning)
-    tf_pads = cls.guess_tf_pad(node.attrs["pads"])
-    return [tf.nn.pool(x, kernel_shape, pooling_type, tf_pads, strides=strides,
-                       data_format=data_format)]
+
+    if "pads" in node.attrs.keys():
+      print("before pad", x)
+      x = cls.get_padding_as_op(x, [0, 0, 0, 0] + node.attrs["pads"])
+      # tf_pads = cls.guess_tf_pad(node.attrs.get("pads", None))
+      print("after pad", x)
+
+    print("avg pool stride", strides)
+    print("avg pool kernel shape", kernel_shape)
+    if cls.supports_device("CUDA"):
+      pooled = tf.nn.avg_pool(x, [1,1]+kernel_shape, [1,1]+strides, "VALID",
+                         data_format=data_format)
+    else:
+      print("taking CPU path")
+      x = tf.transpose(x, perm=[0, 2, 3, 1])
+      print("avg pooling with shape ", x)
+      pooled = tf.nn.avg_pool(x, [1] + kernel_shape + [1], [1] + strides + [1], "VALID",
+                         data_format="NHWC")
+      pooled = tf.transpose(pooled, perm=[0, 3, 1, 2])
+    return [pooled]
 
   @classmethod
   def handle_average_pool(cls, node, input_dict):
@@ -434,8 +476,16 @@ class TensorflowBackend(Backend):
 
     variance_epsilon = node.attrs.get("epsilon", 0.00001)
     if node.attrs.get("is_test", 0):
+      # variance = tf.Print(variance, [variance], "before variance has value")
+      # variance = tf.clip_by_value(1/(variance_epsilon + variance), 0.0, 10.0)
+      # variance = tf.Print(variance, [variance], "after variance has value")
+      # normalized = (x - mean) * tf.sqrt(variance)
+      # output = scale * normalized + bias
+      # output = tf.nn.batch_normalization(x, mean, (variance), bias, scale,
+      #                                 variance_epsilon)
+      # output = tf.clip_by_value(tf.Print(output, [output], "output bn is "), 0, 2)
       return [tf.nn.batch_normalization(x, mean, variance, bias, scale,
-                                      variance_epsilon)]
+                                       variance_epsilon)]
     if "momentum" in node.attrs.keys():
       warnings.warn("Unsupported momentum attribute by Tensorflow in "
                     "batch_normalization. This attribute will be ignored.",
@@ -483,23 +533,66 @@ class TensorflowBackend(Backend):
     weights = tf.transpose(in_weights, perm)
     dilations = node.attrs.get("dilations", None)
     strides = node.attrs.get("strides", None)
-    if "group" in node.attrs.keys():
-      warnings.warn("Unsupported group attribute by Tensorflow in "
-                    "Conv. This attribute will be ignored.",
-                    UserWarning)
+
     if "kernel_shape" in node.attrs.keys():
       warnings.warn("Unsupported kernel_shape attribute by Tensorflow in "
                     "Conv operator. The attribute will be ignored.",
                     UserWarning)
-    tf_pads = cls.guess_tf_pad(node.attrs["pads"])
-    convolved = tf.nn.convolution(x, weights, tf_pads, strides=strides,
+
+    # tf_pads = cls.guess_tf_pad(node.attrs["pads"])
+    print("input x is ", x)
+
+    print("input weight is ", weights)
+    # try:
+    #   print("input bias is ", input_dict[node.inputs[2]])
+    # except Exception as e:
+    #   print(e)
+
+    if "pads" in node.attrs.keys():
+      x = cls.get_padding_as_op(x, [0, 0, 0, 0] + node.attrs["pads"])
+
+    if "group" in node.attrs:
+      print("group conv discovered!")
+
+      weight_groups = tf.split(weights, num_or_size_splits=node.attrs["group"], axis=3)
+      # print("xs", xs)
+      # print("weight_groups", weight_groups)
+      x_t = tf.transpose(x, perm=[0, 2, 3, 1])
+      xs = tf.split(x_t, num_or_size_splits=node.attrs["group"], axis=3)
+      convolved = [tf.nn.convolution(x, weight, "VALID", strides=strides,
                               dilation_rate=dilations,
-                              data_format=data_format)
+                              data_format="NHWC") for (x, weight) in zip(xs, weight_groups)]
+
+      if len(node.inputs) == 2:
+        output = tf.concat(convolved, axis=3)
+        output = tf.transpose(output, perm=[0, 3, 1, 2])
+        print("output of conv is like ", output)
+        return [output]
+      else:
+        bias = input_dict[node.inputs[2]]
+        # print("convoled", convolved)
+        output_transposed = tf.concat(convolved, axis=3)
+        output = tf.nn.bias_add(output_transposed, bias, data_format="NHWC")
+        output_transposed_back = tf.transpose(output, perm=[0, 3, 1, 2])
+        print("output of conv is like ", output_transposed_back)
+        return [output_transposed_back]
+
+    x_t = tf.transpose(x, perm=[0, 2, 3, 1])
+    convolved = tf.nn.convolution(x_t, weights, "VALID", strides=strides,
+                              dilation_rate=dilations,
+                              data_format="NHWC")
+    convolved = tf.transpose(convolved, perm=[0, 3, 1, 2])
+
     if len(node.inputs) == 2:
+      print("output of conv is like ", convolved)
       return [convolved]
     else:
       bias = input_dict[node.inputs[2]]
-      return [tf.nn.bias_add(convolved, bias, data_format="NCHW")]
+      output_transposed = tf.transpose(convolved, perm=[0, 2, 3, 1])
+      output = tf.nn.bias_add(output_transposed, bias, data_format="NHWC")
+      output_transposed_back = tf.transpose(output, perm=[0, 3, 1, 2])
+      print("output of conv is like ", output_transposed_back)
+      return [output_transposed_back]
 
   @classmethod
   def handle_conv(cls, node, input_dict):
@@ -557,6 +650,7 @@ class TensorflowBackend(Backend):
     x = tf.contrib.layers.flatten(x)
     y = input_dict[node.inputs[1]]
     z = input_dict[node.inputs[2]]
+    print("gemm x, y, z are ", x, y, z)
     if "transA" in node.attrs.keys() and node.attrs["transA"] == 1:
       x = tf.transpose(x)
     if "transB" in node.attrs.keys() and node.attrs["transB"] == 1:
@@ -586,13 +680,16 @@ class TensorflowBackend(Backend):
     beta = node.attrs["beta"]
     bias = node.attrs["bias"]
     size = node.attrs["size"]
-    tf_alpha = alpha * 1.0 / size
+    tf_alpha = alpha / size
     depth_radius = np.floor([(size - 1) / 2.0])[0]
     # TODO: LRN in tf accepts radius
     # but in ONNX/Caffe accepts diameter.
     # This could be a problem.
-    return [tf.nn.lrn(x, depth_radius=depth_radius,
-      bias=bias, alpha=tf_alpha, beta=beta)]
+    x_t = tf.transpose(x, perm=[0, 2, 3, 1])
+    normed = tf.nn.lrn(x_t, depth_radius=depth_radius,
+      bias=bias, alpha=tf_alpha, beta=beta)
+    normed = tf.transpose(normed, perm=[0, 3, 1, 2])
+    return [normed]
 
   @classmethod
   def handle_leaky_relu(cls, node, input_dict):
@@ -626,19 +723,31 @@ class TensorflowBackend(Backend):
           all_ones = False
       if not all_ones:
         warnings.warn("No dilations supported by Tensorflow.", UserWarning)
-    kernel_shape = [1, 1] + node.attrs["kernel_shape"]
+    # TODO: change this for GPU
+    kernel_shape = [1] + node.attrs["kernel_shape"] + [1]
     # TODO: map ONNX padding to TF padding. For now default to "SAME".
-    tf_pads = cls.guess_tf_pad(node.attrs["pads"])
-
-    strides = [1, 1] + node.attrs["strides"]
+    print("before pad", x)
+    x = cls.get_padding_as_op(x, [0, 0, 0, 0] + node.attrs["pads"])
+    print(node.attrs["pads"])
+    print("after pad", x)
+    # TODO: change this for GPU
+    strides = [1] + node.attrs["strides"] + [1]
+    print("strides", strides)
+    print("kernel_shape", kernel_shape)
     # Also takes data_format='NCHW'
     # TF only works on 3D and 4D tensors
     if len(kernel_shape) == 4:
-      return [tf.nn.max_pool(x, ksize=kernel_shape,
-        strides=strides, padding=tf_pads, data_format="NCHW")]
+      # print("max pool input is ", x)
+      output_transposed = tf.transpose(x, perm=[0, 2, 3, 1])
+      output = tf.nn.max_pool(output_transposed, ksize=kernel_shape,
+        strides=strides, padding="VALID", data_format="NHWC")
+      # output = tf.nn.bias_add(output_transposed, bias, data_format="NHWC")
+      output_transposed_back = tf.transpose(output, perm=[0, 3, 1, 2])
+      # print("max pool output is ", output_transposed_back)
+      return [output_transposed_back]
     elif len(kernel_shape) >= 5:
       return [tf.nn.max_pool3d(x, ksize=kernel_shape,
-        strides=strides, padding=tf_pads, data_format="NCHW")]
+        strides=strides, padding="VALID", data_format="NCHW")]
     else:
       # TODO: do pooling using other TF operations.
       warnings.warn("Max pool not supported for this tensor size",
@@ -652,6 +761,11 @@ class TensorflowBackend(Backend):
 
   @classmethod
   def handle_mul(cls, node, input_dict):
+    def _explicit_broadcast(tensor):
+      tensor = tf.expand_dims(tensor, 0)
+      tensor = tf.expand_dims(tensor, 2)
+      tensor = tf.expand_dims(tensor, 3)
+      return tensor
     x = input_dict[node.inputs[0]]
     y = input_dict[node.inputs[1]]
     if "broadcast" in node.attrs.keys():
@@ -664,7 +778,8 @@ class TensorflowBackend(Backend):
     if "axis" in node.attrs.keys():
       warnings.warn("Unsupported alpha attribute by Tensorflow in Mul."
         "This attribute will be ignored.", UserWarning)
-    return [tf.multiply(x, y)]
+
+    return [tf.multiply(x, _explicit_broadcast(y))]
 
   #TODO: better support optimized rnn
   @classmethod
