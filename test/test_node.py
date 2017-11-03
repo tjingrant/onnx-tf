@@ -41,17 +41,23 @@ class TestNode(unittest.TestCase):
     np.testing.assert_almost_equal(output["Y"], np.abs(x))
 
   def test_add(self):
-    node_def = helper.make_node("Add", ["A", "B"], ["C"], broadcast=1)
-    a = self._get_rnd([10, 10])
-    b = self._get_rnd([10, 10])
-    output = run_node(node_def, [a, b])
-    np.testing.assert_almost_equal(output["C"], np.add(a, b))
+    node_def = helper.make_node("Add", ["X", "Y"], ["Z"], broadcast=1)
+    x = self._get_rnd([5, 10, 5, 5])
+    y = self._get_rnd([10])
+    output = run_node(node_def, [x, y])
+    np.testing.assert_almost_equal(output["Z"], np.add(x, y.reshape([1, 10, 1, 1])))
 
-    node_def = helper.make_node("Add", ["A", "B"], ["C"], broadcast=1)
-    a = self._get_rnd([10, 10])
-    b = self._get_rnd([10,])
-    output = run_node(node_def, [a, b])
-    np.testing.assert_almost_equal(output["C"], np.add(a, b))
+    # node_def = helper.make_node("Add", ["A", "B"], ["C"], broadcast=1)
+    # a = self._get_rnd([10, 10])
+    # b = self._get_rnd([10, 10])
+    # output = run_node(node_def, [a, b])
+    # np.testing.assert_almost_equal(output["C"], np.add(a, b))
+
+    # node_def = helper.make_node("Add", ["A", "B"], ["C"], broadcast=1)
+    # a = self._get_rnd([10, 10])
+    # b = self._get_rnd([10,])
+    # output = run_node(node_def, [a, b])
+    # np.testing.assert_almost_equal(output["C"], np.add(a, b))
 
   def test_arg_max(self):
     # TODO: need to fix this test
@@ -430,10 +436,10 @@ class TestNode(unittest.TestCase):
 
   def test_mul(self):
     node_def = helper.make_node("Mul", ["X", "Y"], ["Z"], broadcast=1)
-    x = self._get_rnd([10, 10])
-    y = self._get_rnd([10, 10])
+    x = self._get_rnd([5, 10, 5, 5])
+    y = self._get_rnd([10])
     output = run_node(node_def, [x, y])
-    np.testing.assert_almost_equal(output["Z"], np.multiply(x, y))
+    np.testing.assert_almost_equal(output["Z"], np.multiply(x, y.reshape([1, 10, 1, 1])))
 
   def test_neg(self):
     node_def = helper.make_node("Neg", ["X"], ["Y"])
