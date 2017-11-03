@@ -228,7 +228,9 @@ class TensorflowBackend(Backend):
 
   # TODO: better broadcast
   @classmethod
-  def _explicit_broadcast(cls, tensor):
+  def _explicit_broadcast(cls, tensor, broadcast=1):
+    if broadcast == 0:
+      return tensor
     warnings.warn("Currently, support for broadcasting is limited "
                   "and may result in unexpected results",
                     UserWarning)
@@ -391,14 +393,14 @@ class TensorflowBackend(Backend):
     if "broadcast" in node.attrs.keys():
       broadcast = node.attrs["broadcast"]
     else:
-      broadcast = 1
+      broadcast = 0
     if broadcast == 0:
       warnings.warn("Definition of Add with broadcast disabled is incompatible"
                     "between onnx and tensorflow.", UserWarning)
     if "axis" in node.attrs.keys():
       warnings.warn("Unsupported axis attribute by Tensorflow in Add."
                     "This attribute will be ignored.", UserWarning)
-    return [tf.add(x, cls._explicit_broadcast(y))]
+    return [tf.add(x, cls._explicit_broadcast(y, broadcast))]
 
   @classmethod
   def handle_arg_max(cls, node, input_dict):
@@ -715,7 +717,7 @@ class TensorflowBackend(Backend):
     if "broadcast" in node.attrs.keys():
       broadcast = node.attrs["broadcast"]
     else:
-      broadcast = 1
+      broadcast = 0
     if broadcast == 0:
       warnings.warn("Definition of Mul with broadcast disabled is incompatible"
         "between onnx and tensorflow.", UserWarning)
@@ -723,7 +725,7 @@ class TensorflowBackend(Backend):
       warnings.warn("Unsupported axis attribute by Tensorflow in Mul."
         "This attribute will be ignored.", UserWarning)
 
-    return [tf.multiply(x, cls._explicit_broadcast(y))]
+    return [tf.multiply(x, cls._explicit_broadcast(y, broadcast))]
 
   #TODO: better support optimized rnn
   @classmethod
